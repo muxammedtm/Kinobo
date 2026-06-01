@@ -115,12 +115,16 @@ def admin_users_keyboard():
         [InlineKeyboardButton("🔙 Orqaga",       callback_data="adm_back")],
     ])
 
-def admin_settings_keyboard(fwd_block, save_block):
+def admin_settings_keyboard(fwd_block, save_block, bot_username="", channel_username=""):
     fwd_icon  = "✅" if fwd_block  == "1" else "❌"
     save_icon = "✅" if save_block == "1" else "❌"
+    bot_label = f"🤖 Bot: @{bot_username}" if bot_username else "🤖 Bot username (belgilanmagan)"
+    ch_label  = f"📢 Kanal: @{channel_username}" if channel_username else "📢 Kanal username (belgilanmagan)"
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(f"{fwd_icon} Forward bloklash",  callback_data="set_toggle_forward")],
         [InlineKeyboardButton(f"{save_icon} Saqlash bloklash", callback_data="set_toggle_save")],
+        [InlineKeyboardButton(bot_label,                       callback_data="set_bot_username")],
+        [InlineKeyboardButton(ch_label,                        callback_data="set_channel_username")],
         [InlineKeyboardButton("🔙 Orqaga",                     callback_data="adm_back")],
     ])
 

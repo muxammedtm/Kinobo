@@ -92,7 +92,9 @@ class Database:
                 INSERT OR IGNORE INTO settings(key,value) VALUES
                     ('sub_required','0'),
                     ('forward_block','0'),
-                    ('save_block','0');
+                    ('save_block','0'),
+                    ('bot_username',''),
+                    ('channel_username','');
             """)
             c.commit()
 
