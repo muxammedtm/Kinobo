@@ -1,5 +1,4 @@
 import sqlite3
-from datetime import date
 
 class Database:
     def __init__(self, db_path="kinobot.db"):
@@ -69,12 +68,20 @@ class Database:
                     added_at TEXT DEFAULT (datetime('now'))
                 );
 
-                CREATE TABLE IF NOT EXISTS broadcasts (
+                CREATE TABLE IF NOT EXISTS ref_sources (
                     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                    total      INTEGER DEFAULT 0,
-                    sent       INTEGER DEFAULT 0,
-                    failed     INTEGER DEFAULT 0,
+                    code       TEXT UNIQUE NOT NULL,
+                    label      TEXT NOT NULL,
+                    created_by INTEGER NOT NULL,
                     created_at TEXT DEFAULT (datetime('now'))
+                );
+
+                CREATE TABLE IF NOT EXISTS ref_joins (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id    INTEGER NOT NULL,
+                    ref_code   TEXT NOT NULL,
+                    joined_at  TEXT DEFAULT (datetime('now')),
+                    UNIQUE(user_id, ref_code)
                 );
 
                 INSERT OR IGNORE INTO settings(key,value) VALUES
@@ -84,7 +91,7 @@ class Database:
             """)
             c.commit()
 
-    # ─── USERS ───────────────────────────────────────
+    # ── USERS ────────────────────────────────────────────────────────────────
 
     def add_user(self, user_id, username="", first_name="", lang="uz"):
         with self._conn() as c:
@@ -94,7 +101,7 @@ class Database:
             )
             c.commit()
 
-    def get_user(self, user_id) -> dict | None:
+    def get_user(self, user_id):
         with self._conn() as c:
             row = c.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
             return dict(row) if row else None
@@ -114,34 +121,31 @@ class Database:
             c.execute("UPDATE users SET is_banned=0 WHERE user_id=?", (user_id,))
             c.commit()
 
-    def is_banned(self, user_id) -> bool:
+    def is_banned(self, user_id):
         with self._conn() as c:
             row = c.execute("SELECT is_banned FROM users WHERE user_id=?", (user_id,)).fetchone()
             return bool(row and row[0])
 
-    def get_all_user_ids(self) -> list:
+    def get_all_user_ids(self):
         with self._conn() as c:
             return [r[0] for r in c.execute("SELECT user_id FROM users WHERE is_banned=0").fetchall()]
 
-    def get_active_user_ids(self) -> list:
-        """So'nggi 7 kun ichida harakatlanganlar"""
+    def get_active_user_ids(self):
         with self._conn() as c:
             rows = c.execute(
                 "SELECT DISTINCT user_id FROM history WHERE viewed_at >= date('now','-7 days')"
             ).fetchall()
             return [r[0] for r in rows]
 
-    def get_users_count(self) -> int:
+    def get_users_count(self):
         with self._conn() as c:
             return c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
 
-    def get_today_users_count(self) -> int:
+    def get_today_users_count(self):
         with self._conn() as c:
-            return c.execute(
-                "SELECT COUNT(*) FROM users WHERE joined_at=date('now')"
-            ).fetchone()[0]
+            return c.execute("SELECT COUNT(*) FROM users WHERE joined_at=date('now')").fetchone()[0]
 
-    def get_all_users_info(self, limit=50, offset=0) -> list:
+    def get_all_users_info(self, limit=50, offset=0):
         with self._conn() as c:
             rows = c.execute(
                 "SELECT user_id,username,first_name,lang,is_banned,joined_at FROM users LIMIT ? OFFSET ?",
@@ -149,21 +153,20 @@ class Database:
             ).fetchall()
             return [dict(r) for r in rows]
 
-    def search_user(self, query) -> list:
+    def search_user(self, query):
         with self._conn() as c:
             rows = c.execute(
                 "SELECT user_id,username,first_name,is_banned FROM users WHERE username LIKE ? OR first_name LIKE ? OR user_id=?",
-                (f"%{query}%", f"%{query}%", query if query.isdigit() else -1)
+                (f"%{query}%", f"%{query}%", query if str(query).isdigit() else -1)
             ).fetchall()
             return [dict(r) for r in rows]
 
-    # ─── MOVIES ──────────────────────────────────────
+    # ── MOVIES ───────────────────────────────────────────────────────────────
 
-    def add_movie(self, data: dict):
+    def add_movie(self, data):
         with self._conn() as c:
             c.execute(
-                """INSERT INTO movies(title,description,year,genre,category,code,file_id)
-                   VALUES(:title,:description,:year,:genre,:category,:code,:file_id)""",
+                "INSERT INTO movies(title,description,year,genre,category,code,file_id) VALUES(:title,:description,:year,:genre,:category,:code,:file_id)",
                 data
             )
             c.commit()
@@ -176,12 +179,12 @@ class Database:
             c.execute(f"UPDATE movies SET {field}=? WHERE id=?", (value, movie_id))
             c.commit()
 
-    def get_movie_by_code(self, code) -> dict | None:
+    def get_movie_by_code(self, code):
         with self._conn() as c:
             row = c.execute("SELECT * FROM movies WHERE code=?", (code,)).fetchone()
             return dict(row) if row else None
 
-    def get_movie_by_id(self, movie_id) -> dict | None:
+    def get_movie_by_id(self, movie_id):
         with self._conn() as c:
             row = c.execute("SELECT * FROM movies WHERE id=?", (movie_id,)).fetchone()
             return dict(row) if row else None
@@ -197,7 +200,7 @@ class Database:
             c.execute("DELETE FROM favorites WHERE movie_id=?", (movie_id,))
             c.commit()
 
-    def get_all_movies(self, limit=30, offset=0) -> list:
+    def get_all_movies(self, limit=30, offset=0):
         with self._conn() as c:
             rows = c.execute(
                 "SELECT id,title,code,genre,category,views FROM movies ORDER BY added_at DESC LIMIT ? OFFSET ?",
@@ -205,7 +208,7 @@ class Database:
             ).fetchall()
             return [dict(r) for r in rows]
 
-    def search_movies(self, query) -> list:
+    def search_movies(self, query):
         with self._conn() as c:
             rows = c.execute(
                 "SELECT id,title,code FROM movies WHERE title LIKE ? OR code=? LIMIT 20",
@@ -213,39 +216,25 @@ class Database:
             ).fetchall()
             return [dict(r) for r in rows]
 
-    def get_top_movies(self, limit=10) -> list:
+    def get_top_movies(self, limit=10):
         with self._conn() as c:
             rows = c.execute(
                 "SELECT id,title,code,views FROM movies ORDER BY views DESC LIMIT ?", (limit,)
             ).fetchall()
             return [dict(r) for r in rows]
 
-    def get_new_movies(self, limit=10) -> list:
+    def get_new_movies(self, limit=10):
         with self._conn() as c:
             rows = c.execute(
                 "SELECT id,title,code,added_at FROM movies ORDER BY added_at DESC LIMIT ?", (limit,)
             ).fetchall()
             return [dict(r) for r in rows]
 
-    def get_categories(self) -> list:
-        with self._conn() as c:
-            rows = c.execute(
-                "SELECT DISTINCT category FROM movies WHERE category!='' ORDER BY category"
-            ).fetchall()
-            return [r[0] for r in rows]
-
-    def get_genres(self) -> list:
-        with self._conn() as c:
-            rows = c.execute(
-                "SELECT DISTINCT genre FROM movies WHERE genre!='' ORDER BY genre"
-            ).fetchall()
-            return [r[0] for r in rows]
-
-    def get_movies_count(self) -> int:
+    def get_movies_count(self):
         with self._conn() as c:
             return c.execute("SELECT COUNT(*) FROM movies").fetchone()[0]
 
-    # ─── FAVORITES ───────────────────────────────────
+    # ── FAVORITES ────────────────────────────────────────────────────────────
 
     def add_favorite(self, user_id, movie_id):
         with self._conn() as c:
@@ -257,41 +246,37 @@ class Database:
             c.execute("DELETE FROM favorites WHERE user_id=? AND movie_id=?", (user_id, movie_id))
             c.commit()
 
-    def is_favorite(self, user_id, movie_id) -> bool:
+    def is_favorite(self, user_id, movie_id):
         with self._conn() as c:
             row = c.execute(
                 "SELECT 1 FROM favorites WHERE user_id=? AND movie_id=?", (user_id, movie_id)
             ).fetchone()
             return bool(row)
 
-    def get_favorites(self, user_id) -> list:
+    def get_favorites(self, user_id):
         with self._conn() as c:
             rows = c.execute(
-                """SELECT m.id,m.title,m.code FROM favorites f
-                   JOIN movies m ON m.id=f.movie_id
-                   WHERE f.user_id=? ORDER BY f.id DESC""",
+                "SELECT m.id,m.title,m.code FROM favorites f JOIN movies m ON m.id=f.movie_id WHERE f.user_id=? ORDER BY f.id DESC",
                 (user_id,)
             ).fetchall()
             return [dict(r) for r in rows]
 
-    # ─── HISTORY ─────────────────────────────────────
+    # ── HISTORY ──────────────────────────────────────────────────────────────
 
     def add_history(self, user_id, movie_id):
         with self._conn() as c:
             c.execute("INSERT INTO history(user_id,movie_id) VALUES(?,?)", (user_id, movie_id))
             c.commit()
 
-    def get_history(self, user_id, limit=10) -> list:
+    def get_history(self, user_id, limit=10):
         with self._conn() as c:
             rows = c.execute(
-                """SELECT m.id,m.title,m.code,h.viewed_at FROM history h
-                   JOIN movies m ON m.id=h.movie_id
-                   WHERE h.user_id=? ORDER BY h.id DESC LIMIT ?""",
+                "SELECT m.id,m.title,m.code,h.viewed_at FROM history h JOIN movies m ON m.id=h.movie_id WHERE h.user_id=? ORDER BY h.id DESC LIMIT ?",
                 (user_id, limit)
             ).fetchall()
             return [dict(r) for r in rows]
 
-    # ─── CHANNELS ────────────────────────────────────
+    # ── CHANNELS ─────────────────────────────────────────────────────────────
 
     def add_channel(self, channel_id, username, title=""):
         with self._conn() as c:
@@ -301,7 +286,7 @@ class Database:
             )
             c.commit()
 
-    def get_channels(self) -> list:
+    def get_channels(self):
         with self._conn() as c:
             rows = c.execute("SELECT * FROM channels WHERE is_active=1").fetchall()
             return [dict(r) for r in rows]
@@ -311,13 +296,13 @@ class Database:
             c.execute("DELETE FROM channels WHERE id=?", (ch_id,))
             c.commit()
 
-    def get_channels_count(self) -> int:
+    def get_channels_count(self):
         with self._conn() as c:
             return c.execute("SELECT COUNT(*) FROM channels WHERE is_active=1").fetchone()[0]
 
-    # ─── SETTINGS ────────────────────────────────────
+    # ── SETTINGS ─────────────────────────────────────────────────────────────
 
-    def get_setting(self, key, default="0") -> str:
+    def get_setting(self, key, default="0"):
         with self._conn() as c:
             row = c.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
             return row[0] if row else default
@@ -327,7 +312,7 @@ class Database:
             c.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (key, str(value)))
             c.commit()
 
-    # ─── ADMINS ──────────────────────────────────────
+    # ── ADMINS ───────────────────────────────────────────────────────────────
 
     def add_admin(self, user_id, role="moderator"):
         with self._conn() as c:
@@ -339,23 +324,87 @@ class Database:
             c.execute("DELETE FROM admins WHERE user_id=?", (user_id,))
             c.commit()
 
-    def get_admins(self) -> list:
+    def get_admins(self):
         with self._conn() as c:
             rows = c.execute("SELECT user_id,role FROM admins").fetchall()
             return [dict(r) for r in rows]
 
-    def get_admin_ids(self) -> list:
+    def get_admin_ids(self):
         with self._conn() as c:
             return [r[0] for r in c.execute("SELECT user_id FROM admins").fetchall()]
 
-    def get_admin_role(self, user_id) -> str | None:
+    def get_admin_role(self, user_id):
         with self._conn() as c:
             row = c.execute("SELECT role FROM admins WHERE user_id=?", (user_id,)).fetchone()
             return row[0] if row else None
 
-    # ─── STATS ───────────────────────────────────────
+    # ── REFERRAL ─────────────────────────────────────────────────────────────
 
-    def get_stats(self) -> dict:
+    def create_ref(self, code, label, created_by):
+        try:
+            with self._conn() as c:
+                c.execute(
+                    "INSERT INTO ref_sources(code,label,created_by) VALUES(?,?,?)",
+                    (code, label, created_by)
+                )
+                c.commit()
+            return True
+        except Exception:
+            return False
+
+    def get_ref(self, code):
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM ref_sources WHERE code=?", (code,)).fetchone()
+            return dict(row) if row else None
+
+    def get_all_refs(self):
+        with self._conn() as c:
+            rows = c.execute("SELECT * FROM ref_sources ORDER BY id DESC").fetchall()
+            return [dict(r) for r in rows]
+
+    def delete_ref(self, code):
+        with self._conn() as c:
+            c.execute("DELETE FROM ref_sources WHERE code=?", (code,))
+            c.execute("DELETE FROM ref_joins WHERE ref_code=?", (code,))
+            c.commit()
+
+    def add_ref_join(self, user_id, ref_code):
+        try:
+            with self._conn() as c:
+                c.execute(
+                    "INSERT OR IGNORE INTO ref_joins(user_id,ref_code) VALUES(?,?)",
+                    (user_id, ref_code)
+                )
+                c.commit()
+            return True
+        except Exception:
+            return False
+
+    def get_ref_stats(self, code):
+        with self._conn() as c:
+            total = c.execute("SELECT COUNT(*) FROM ref_joins WHERE ref_code=?", (code,)).fetchone()[0]
+            today = c.execute(
+                "SELECT COUNT(*) FROM ref_joins WHERE ref_code=? AND date(joined_at)=date('now')", (code,)
+            ).fetchone()[0]
+            week = c.execute(
+                "SELECT COUNT(*) FROM ref_joins WHERE ref_code=? AND joined_at >= date('now','-7 days')", (code,)
+            ).fetchone()[0]
+            daily = c.execute(
+                "SELECT date(joined_at) as day, COUNT(*) as cnt FROM ref_joins WHERE ref_code=? AND joined_at >= date('now','-7 days') GROUP BY day ORDER BY day",
+                (code,)
+            ).fetchall()
+            return {"total": total, "today": today, "week": week, "daily": [dict(r) for r in daily]}
+
+    def get_all_ref_stats(self):
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT r.code, r.label, r.created_at, COUNT(j.id) as total FROM ref_sources r LEFT JOIN ref_joins j ON j.ref_code=r.code GROUP BY r.code ORDER BY total DESC"
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    # ── STATS ────────────────────────────────────────────────────────────────
+
+    def get_stats(self):
         return {
             "users":       self.get_users_count(),
             "today_users": self.get_today_users_count(),
