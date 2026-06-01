@@ -1,3 +1,4 @@
+import random as _random
 from telegram import Update
 from telegram.ext import ContextTypes
 from database import Database
@@ -39,7 +40,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_new:
         db.add_user(user.id, user.username or "", user.first_name or "")
 
-    # Referral yoki kino deep link
     movie_code = None
     if args:
         arg = args[0]
@@ -48,7 +48,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ref = db.get_ref(ref_code)
             if ref and is_new:
                 result = db.add_ref_join(user.id, ref_code)
-                # Limit to'lgan — adminga xabar
                 if result == 'stopped':
                     s = db.get_ref_stats(ref_code)
                     try:
@@ -70,7 +69,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t("banned", _lang(user.id)))
         return
 
-    # Yangi user — til tanlash
     if is_new:
         if movie_code:
             context.user_data["pending_code"] = movie_code
@@ -83,7 +81,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lang = _lang(user.id)
 
-    # Majburiy obuna
     not_subbed = await _check_sub(user.id, context.bot)
     if not_subbed:
         if movie_code:
@@ -95,7 +92,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Kino deep link
     if movie_code:
         await _send_movie(update, context, movie_code, lang)
         return
@@ -154,29 +150,22 @@ async def cb_check_sub(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Foydalanuvchi yangi obunachi — barcha aktiv kanallarga +1
-    # va limitga yetgan kanallarni o'chirib adminga xabar berish
     all_channels = db.get_all_channels()
     for ch in all_channels:
         if not ch["is_active"]:
             continue
-        # Bu user bu kanalga yangi obunami? (avval kelmaganmi)
         already_key = "sub_counted_" + str(user_id) + "_" + str(ch["id"])
         if context.application.bot_data.get(already_key):
             continue
         context.application.bot_data[already_key] = True
-
         stopped = db.inc_channel_joined(ch["channel_id"])
         if stopped:
-            # Adminga xabar
             try:
-                title = ch["title"]
-                lim   = ch["limit_count"]
                 await context.bot.send_message(
                     cfg.OWNER_ID,
                     "🔴 <b>Majburiy obuna toxtatildi!</b>\n\n"
-                    "Kanal: <b>" + title + "</b>\n"
-                    "Limit: <b>" + str(lim) + " ta</b> obunachi\n\n"
+                    "Kanal: <b>" + ch["title"] + "</b>\n"
+                    "Limit: <b>" + str(ch["limit_count"]) + " ta</b> obunachi\n\n"
                     "Admin panel → Kanallar → kanalga bosing → qayta yoqish mumkin.",
                     parse_mode="HTML"
                 )
@@ -220,6 +209,8 @@ async def _deliver_movie(bot, user_id, movie, lang):
     db.add_history(user_id, movie["id"])
     is_fav  = db.is_favorite(user_id, movie["id"])
     protect = db.get_setting("save_block") == "1"
+    bot_username     = db.get_setting("bot_username", "")
+    channel_username = db.get_setting("channel_username", "")
 
     cap = f"🎬 <b>{movie['title']}</b>\n━━━━━━━━━━━━━━━━━━━━\n"
     if movie.get("description"):
@@ -232,7 +223,17 @@ async def _deliver_movie(bot, user_id, movie, lang):
         cap += f"📂 {movie['category']}\n"
     cap += f"\n🆔 Kod: <code>{movie['code']}</code>"
 
-    kb = movie_keyboard(movie["id"], is_fav, lang)
+    # Bot va kanal linki
+    if bot_username:
+        cap += f"\n🤖 Bot: @{bot_username}"
+    if channel_username:
+        cap += f"\n📢 Kanal: @{channel_username}"
+
+    kb = movie_keyboard(
+        movie["id"], is_fav, lang,
+        bot_username=bot_username,
+        channel_username=channel_username
+    )
     try:
         await bot.send_video(
             user_id, video=movie["file_id"],
@@ -283,8 +284,24 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t("choose_lang", lang), reply_markup=lang_keyboard(), parse_mode="HTML")
     elif text in ("ℹ️ Yordam", "ℹ️ Помощь"):
         await update.message.reply_text(t("help", lang), parse_mode="HTML")
+    elif text in ("🎲 Tasodifiy kino", "🎲 Случайный"):
+        await _send_random(update, context, lang)
     else:
         await _send_movie(update, context, text, lang)
+
+
+# ─── RANDOM KINO ─────────────────────────────────────────────────────────────
+
+async def _send_random(update, context, lang):
+    movies = db.get_all_movies_ids()
+    if not movies:
+        await update.message.reply_text(
+            "📭 Hozircha kinolar yo'q." if lang == "uz" else "📭 Фильмов пока нет."
+        )
+        return
+    random_movie = db.get_movie_by_id(_random.choice(movies))
+    if random_movie:
+        await _deliver_movie(context.bot, update.effective_user.id, random_movie, lang)
 
 
 async def _show_favorites(update, lang):
@@ -335,15 +352,17 @@ async def cb_favorite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     parts    = query.data.split("_")
     action   = parts[1]
     movie_id = int(parts[2])
+    bot_username     = db.get_setting("bot_username", "")
+    channel_username = db.get_setting("channel_username", "")
 
     if action == "add":
         db.add_favorite(user_id, movie_id)
         await query.answer(t("added_to_fav", lang), show_alert=True)
-        kb = movie_keyboard(movie_id, True, lang)
+        kb = movie_keyboard(movie_id, True, lang, bot_username, channel_username)
     else:
         db.remove_favorite(user_id, movie_id)
         await query.answer(t("removed_from_fav", lang), show_alert=True)
-        kb = movie_keyboard(movie_id, False, lang)
+        kb = movie_keyboard(movie_id, False, lang, bot_username, channel_username)
 
     try:
         await query.message.edit_reply_markup(reply_markup=kb)

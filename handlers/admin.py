@@ -183,6 +183,21 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += f"{i}. {m['title']} <code>{m['code']}</code> 👁{m['views']}\n"
         await query.message.edit_text(text, parse_mode="HTML", reply_markup=back_admin())
 
+    elif data == "mov_random_send":
+        import random as _rand
+        ids = db.get_all_movies_ids()
+        if not ids:
+            await query.message.edit_text("📭 Hozircha kinolar yo\'q.", reply_markup=back_admin())
+        else:
+            movie = db.get_movie_by_id(_rand.choice(ids))
+            await query.message.edit_text(
+                "🎲 <b>Tasodifiy kino tanlandi!</b>\n\n"
+                f"🎬 <b>{movie[\'title\']}</b>\n"
+                f"🆔 Kod: <code>{movie[\'code\']}</code>\n\n"
+                "Foydalanuvchilarga yuborish uchun broadcast ishlating.",
+                parse_mode="HTML", reply_markup=back_admin()
+            )
+
     # ── KANALLAR ──────────────────────────────────────────────────────────────
     elif data == "adm_channels":
         await query.message.edit_text("📢 <b>Kanal boshqaruvi</b>", parse_mode="HTML",
@@ -888,6 +903,8 @@ async def _post_to_channel(bot, movie: dict):
     if bot_username:
         deep_link = f"https://t.me/{bot_username}?start={movie['code']}"
         kb_rows.append([InlineKeyboardButton("🎥 Kinoni olish", url=deep_link)])
+    if bot_username and movie.get("code"):
+        kb_rows.append([InlineKeyboardButton("🎬 Kinoni olish", url=f"https://t.me/{bot_username}?start={movie['code']}")])
     if channel_username:
         kb_rows.append([InlineKeyboardButton("📢 Kanalga o'tish", url=f"https://t.me/{channel_username}")])
     kb = InlineKeyboardMarkup(kb_rows) if kb_rows else None
