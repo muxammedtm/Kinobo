@@ -50,12 +50,14 @@ class Database:
                 );
 
                 CREATE TABLE IF NOT EXISTS channels (
-                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                    channel_id   TEXT UNIQUE NOT NULL,
-                    username     TEXT NOT NULL,
-                    title        TEXT DEFAULT '',
-                    invite_link  TEXT DEFAULT '',
-                    is_active    INTEGER DEFAULT 1
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    channel_id    TEXT UNIQUE NOT NULL,
+                    username      TEXT NOT NULL,
+                    title         TEXT DEFAULT '',
+                    invite_link   TEXT DEFAULT '',
+                    limit_count   INTEGER DEFAULT 0,
+                    joined_count  INTEGER DEFAULT 0,
+                    is_active     INTEGER DEFAULT 1
                 );
 
                 CREATE TABLE IF NOT EXISTS settings (
@@ -281,11 +283,11 @@ class Database:
 
     # ── CHANNELS ─────────────────────────────────────────────────────────────
 
-    def add_channel(self, channel_id, username, title="", invite_link=""):
+    def add_channel(self, channel_id, username, title="", invite_link="", limit_count=0):
         with self._conn() as c:
             c.execute(
-                "INSERT OR REPLACE INTO channels(channel_id,username,title,invite_link) VALUES(?,?,?,?)",
-                (channel_id, username, title, invite_link)
+                "INSERT OR REPLACE INTO channels(channel_id,username,title,invite_link,limit_count) VALUES(?,?,?,?,?)",
+                (channel_id, username, title, invite_link, limit_count)
             )
             c.commit()
 
@@ -293,6 +295,52 @@ class Database:
         with self._conn() as c:
             rows = c.execute("SELECT * FROM channels WHERE is_active=1").fetchall()
             return [dict(r) for r in rows]
+
+    def get_all_channels(self):
+        with self._conn() as c:
+            rows = c.execute("SELECT * FROM channels ORDER BY id DESC").fetchall()
+            return [dict(r) for r in rows]
+
+    def get_channel_by_id(self, ch_id):
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM channels WHERE id=?", (ch_id,)).fetchone()
+            return dict(row) if row else None
+
+    def set_channel_limit(self, ch_id, limit_count):
+        with self._conn() as c:
+            c.execute("UPDATE channels SET limit_count=? WHERE id=?", (limit_count, ch_id))
+            c.commit()
+
+    def inc_channel_joined(self, channel_id) -> bool:
+        """
+        Kanal obunachisini +1 qiladi.
+        Limit tolsa is_active=0 qilib True qaytaradi (toxtatildi).
+        """
+        with self._conn() as c:
+            c.execute(
+                "UPDATE channels SET joined_count=joined_count+1 WHERE channel_id=?",
+                (channel_id,)
+            )
+            c.commit()
+            row = c.execute(
+                "SELECT limit_count, joined_count FROM channels WHERE channel_id=?",
+                (channel_id,)
+            ).fetchone()
+            if row and row[0] > 0 and row[1] >= row[0]:
+                c.execute("UPDATE channels SET is_active=0 WHERE channel_id=?", (channel_id,))
+                c.commit()
+                return True
+        return False
+
+    def deactivate_channel(self, ch_id):
+        with self._conn() as c:
+            c.execute("UPDATE channels SET is_active=0 WHERE id=?", (ch_id,))
+            c.commit()
+
+    def activate_channel(self, ch_id):
+        with self._conn() as c:
+            c.execute("UPDATE channels SET is_active=1, joined_count=0 WHERE id=?", (ch_id,))
+            c.commit()
 
     def delete_channel(self, ch_id):
         with self._conn() as c:
