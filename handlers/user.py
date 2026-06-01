@@ -47,7 +47,22 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ref_code = arg[4:]
             ref = db.get_ref(ref_code)
             if ref and is_new:
-                db.add_ref_join(user.id, ref_code)
+                result = db.add_ref_join(user.id, ref_code)
+                # Limit to'lgan — adminga xabar
+                if result == 'stopped':
+                    s = db.get_ref_stats(ref_code)
+                    try:
+                        await context.bot.send_message(
+                            cfg.OWNER_ID,
+                            f"🔴 <b>Kampaniya to'xtatildi!</b>\n\n"
+                            f"📢 <b>{ref['label']}</b>\n"
+                            f"👥 Limit: <b>{ref['limit_count']}</b> ta\n"
+                            f"✅ Jami keldi: <b>{s['total']}</b> ta\n\n"
+                            f"<i>Kampaniyani davom ettirish uchun /ref → statistika → Davom ettirish</i>",
+                            parse_mode="HTML"
+                        )
+                    except Exception:
+                        pass
         else:
             movie_code = arg
 

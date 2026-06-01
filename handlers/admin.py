@@ -191,7 +191,11 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "ch_add":
         context.user_data["adm_state"] = "ch_add"
         await query.message.edit_text(
-            "📢 <b>Kanal qo'shish</b>\n\nKanal username'ini yuboring:\nMasalan: <code>@mychannelname</code>",
+            "📢 <b>Kanal qo'shish</b>\n\n"
+            "Kanal username yoki invite linkini yuboring:\n\n"
+            "📌 <b>Ochiq kanal:</b> <code>@kanalname</code>\n"
+            "📌 <b>Yopiq kanal:</b> <code>https://t.me/+XhDl2wJvCVtiZjZi</code>\n\n"
+            "⚠️ Yopiq kanalda bot admin bo'lishi shart!",
             parse_mode="HTML", reply_markup=back_admin()
         )
 
@@ -515,20 +519,82 @@ async def admin_state_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # ─── KANAL QO'SHISH ───────────────────────────────────────────────────────
     elif state == "ch_add":
+        context.user_data.pop("adm_state", None)
+        invite_link = ""
+
+        # Yopiq kanal — https://t.me/+ link
+        if text.startswith("https://t.me/+") or text.startswith("t.me/+"):
+            invite_link = text if text.startswith("https://") else f"https://{text}"
+            # Yopiq kanalda get_chat ishlamaydi, admin kanal ID sini berishi kerak
+            context.user_data["adm_state"]   = "ch_add_private_id"
+            context.user_data["ch_invite"]   = invite_link
+            await msg.reply_text(
+                "📢 <b>Yopiq kanal</b>\n\n"
+                "Kanal ID sini yuboring.\n\n"
+                "Kanal ID topish uchun:\n"
+                "1. @getidsbot ga kanaldan forward qiling\n"
+                "2. Yoki @JsonDumpBot ga qo'shing\n\n"
+                "<i>Masalan: <code>-1001234567890</code></i>",
+                parse_mode="HTML",
+                reply_markup=back_admin()
+            )
+            return True
+
+        # Ochiq kanal — @username
         username = text if text.startswith("@") else f"@{text}"
         try:
             chat = await context.bot.get_chat(username)
-            db.add_channel(str(chat.id), username, chat.title or username)
-            context.user_data.pop("adm_state", None)
+            db.add_channel(str(chat.id), username, chat.title or username, "")
             await msg.reply_text(
-                f"✅ Kanal qo'shildi!\n📢 {chat.title}\n🔗 {username}",
+                f"✅ <b>Kanal qo'shildi!</b>\n"
+                f"📢 {chat.title}\n"
+                f"🔗 {username}",
+                parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("🔙 Kanallar", callback_data="ch_list")
                 ]])
             )
         except Exception as e:
             await msg.reply_text(
-                f"❌ Xatolik: {e}\n\n❗ Bot kanalga admin qilinganmi?"
+                f"❌ Xatolik: {e}\n\n"
+                f"❗ Bot kanalga admin qilinganmi?\n"
+                f"❗ Username to'g'rimi?"
+            )
+        return True
+
+    # ─── YOPIQ KANAL ID ───────────────────────────────────────────────────────
+    elif state == "ch_add_private_id":
+        invite_link = context.user_data.pop("ch_invite", "")
+        context.user_data.pop("adm_state", None)
+        raw = text.strip()
+        # ID dan - belgisini tekshirish
+        if not raw.lstrip("-").isdigit():
+            await msg.reply_text(
+                "❌ Noto'g'ri ID! Masalan: <code>-1001234567890</code>",
+                parse_mode="HTML"
+            )
+            return True
+        channel_id = raw if raw.startswith("-") else f"-100{raw}"
+        try:
+            chat = await context.bot.get_chat(int(channel_id))
+            title = chat.title or "Yopiq kanal"
+            db.add_channel(channel_id, invite_link, title, invite_link)
+            await msg.reply_text(
+                f"✅ <b>Yopiq kanal qo'shildi!</b>\n"
+                f"📢 {title}\n"
+                f"🔗 {invite_link}",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Kanallar", callback_data="ch_list")
+                ]])
+            )
+        except Exception as e:
+            await msg.reply_text(
+                f"❌ Xatolik: {e}\n\n"
+                f"❗ Bot kanalga admin qilinganmi?\n"
+                f"❗ Kanal ID to'g'rimi: <code>{channel_id}</code>",
+                parse_mode="HTML"
+            )
             )
         return True
 
