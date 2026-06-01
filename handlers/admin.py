@@ -200,26 +200,74 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "ch_list":
-        channels = db.get_channels()
+        channels = db.get_all_channels()
         if not channels:
-            await query.message.edit_text("📢 Kanallar yo'q.", reply_markup=back_admin())
+            await query.message.edit_text("Kanallar yoq.", reply_markup=back_admin())
             return
-        text = "📢 <b>Majburiy kanallar:</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        text = "Barcha kanallar:\n\n"
         kb = []
         for ch in channels:
-            text += f"• {ch['title']} ({ch['username']})\n"
-            kb.append([InlineKeyboardButton(
-                f"🗑 {ch['title'][:25]}", callback_data=f"ch_del_{ch['id']}"
-            )])
-        kb.append([InlineKeyboardButton("🔙 Orqaga", callback_data="adm_channels")])
+            icon    = "🟢" if ch["is_active"] else "🔴"
+            lim     = ch["limit_count"]
+            joined  = ch["joined_count"]
+            title   = ch["title"]
+            lim_str = " (" + str(joined) + "/" + str(lim) + ")" if lim > 0 else ""
+            text += icon + " " + title + lim_str + "\n"
+            kb.append([
+                InlineKeyboardButton(icon + " " + title[:20] + lim_str, callback_data="ch_info_" + str(ch["id"]))
+            ])
+        kb.append([InlineKeyboardButton("Orqaga", callback_data="adm_channels")])
+        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(kb))
+
+    elif data.startswith("ch_info_"):
+        ch_id = int(data.split("_")[-1])
+        ch = db.get_channel_by_id(ch_id)
+        if not ch:
+            await query.message.edit_text("Topilmadi.", reply_markup=back_admin())
+            return
+        icon    = "🟢 Faol" if ch["is_active"] else "🔴 Toxtatilgan"
+        lim     = ch["limit_count"]
+        joined  = ch["joined_count"]
+        lim_str = str(joined) + "/" + str(lim) if lim > 0 else "Cheksiz"
+        text = (
+            "Kanal: <b>" + ch["title"] + "</b>\n"
+            "Holat: <b>" + icon + "</b>\n"
+            "Limit: <b>" + lim_str + "</b>\n"
+        )
+        kb = []
+        if ch["is_active"]:
+            kb.append([InlineKeyboardButton("🔴 Toxtatish", callback_data="ch_deact_" + str(ch_id))])
+        else:
+            kb.append([InlineKeyboardButton("🟢 Qayta yoqish", callback_data="ch_act_" + str(ch_id))])
+        kb.append([InlineKeyboardButton("🗑 Ochirish", callback_data="ch_del_" + str(ch_id))])
+        kb.append([InlineKeyboardButton("Orqaga", callback_data="ch_list")])
         await query.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(kb))
+
+    elif data.startswith("ch_deact_"):
+        ch_id = int(data.split("_")[-1])
+        db.deactivate_channel(ch_id)
+        await query.message.edit_text(
+            "Kanal majburiy obunadan olib tashlandi.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Orqaga", callback_data="ch_list")]])
+        )
+
+    elif data.startswith("ch_act_"):
+        ch_id = int(data.split("_")[-1])
+        db.activate_channel(ch_id)
+        await query.message.edit_text(
+            "Kanal qayta yoqildi! Obunachi hisobi 0 dan boshlandi.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Orqaga", callback_data="ch_list")]])
+        )
 
     elif data.startswith("ch_del_"):
         ch_id = int(data.split("_")[-1])
         db.delete_channel(ch_id)
-        await query.message.edit_text("✅ Kanal o'chirildi!", reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("🔙 Kanallar", callback_data="ch_list")
-        ]]))
+        await query.message.edit_text(
+            "Kanal ochirildi!",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("Kanallar", callback_data="ch_list")
+            ]])
+        )
 
     elif data == "ch_toggle_sub":
         cur = db.get_setting("sub_required")
@@ -524,77 +572,109 @@ async def admin_state_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         # Yopiq kanal — https://t.me/+ link
         if text.startswith("https://t.me/+") or text.startswith("t.me/+"):
-            invite_link = text if text.startswith("https://") else f"https://{text}"
-            # Yopiq kanalda get_chat ishlamaydi, admin kanal ID sini berishi kerak
-            context.user_data["adm_state"]   = "ch_add_private_id"
-            context.user_data["ch_invite"]   = invite_link
+            invite_link = text if text.startswith("https://") else "https://" + text
+            context.user_data["adm_state"]  = "ch_add_private_id"
+            context.user_data["ch_invite"]  = invite_link
             await msg.reply_text(
-                "📢 <b>Yopiq kanal</b>\n\n"
-                "Kanal ID sini yuboring.\n\n"
-                "Kanal ID topish uchun:\n"
-                "1. @getidsbot ga kanaldan forward qiling\n"
-                "2. Yoki @JsonDumpBot ga qo'shing\n\n"
-                "<i>Masalan: <code>-1001234567890</code></i>",
-                parse_mode="HTML",
+                "Yopiq kanal — Kanal ID sini yuboring.\n\n"
+                "Kanal ID topish:\n"
+                "1. @getidsbot ga kanaldan forward qiling\n\n"
+                "Masalan: -1001234567890",
                 reply_markup=back_admin()
             )
             return True
 
         # Ochiq kanal — @username
-        username = text if text.startswith("@") else f"@{text}"
+        username = text if text.startswith("@") else "@" + text
         try:
             chat = await context.bot.get_chat(username)
-            db.add_channel(str(chat.id), username, chat.title or username, "")
+            title = chat.title or username
+            context.user_data["ch_pending"] = {
+                "channel_id": str(chat.id),
+                "username":   username,
+                "title":      title,
+                "invite_link": ""
+            }
+            context.user_data["adm_state"] = "ch_add_limit"
             await msg.reply_text(
-                f"✅ <b>Kanal qo'shildi!</b>\n"
-                f"📢 {chat.title}\n"
-                f"🔗 {username}",
+                "Kanal topildi: <b>" + title + "</b>\n\n"
+                "Nechta obunachidan keyin bu kanal majburiy obunadan olib tashlansin?\n\n"
+                "Cheksiz qoldirish: 0 yuboring\n"
+                "Masalan: 50, 100, 500",
                 parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔙 Kanallar", callback_data="ch_list")
-                ]])
+                reply_markup=back_admin()
             )
         except Exception as e:
             await msg.reply_text(
-                f"❌ Xatolik: {e}\n\n"
-                f"❗ Bot kanalga admin qilinganmi?\n"
-                f"❗ Username to'g'rimi?"
+                "Xatolik: " + str(e) + "\n\n"
+                "Bot kanalga admin qilinganmi?\n"
+                "Username togrimI?"
             )
         return True
 
     # ─── YOPIQ KANAL ID ───────────────────────────────────────────────────────
     elif state == "ch_add_private_id":
         invite_link = context.user_data.pop("ch_invite", "")
-        context.user_data.pop("adm_state", None)
         raw = text.strip()
-        # ID dan - belgisini tekshirish
         if not raw.lstrip("-").isdigit():
-            await msg.reply_text(
-                "❌ Noto'g'ri ID! Masalan: <code>-1001234567890</code>",
-                parse_mode="HTML"
-            )
+            await msg.reply_text("Notogri ID! Masalan: -1001234567890")
             return True
-        channel_id = raw if raw.startswith("-") else f"-100{raw}"
+        channel_id = raw if raw.startswith("-") else "-100" + raw
         try:
             chat = await context.bot.get_chat(int(channel_id))
             title = chat.title or "Yopiq kanal"
-            db.add_channel(channel_id, invite_link, title, invite_link)
+            context.user_data["ch_pending"] = {
+                "channel_id":  channel_id,
+                "username":    invite_link,
+                "title":       title,
+                "invite_link": invite_link
+            }
+            context.user_data.pop("adm_state", None)
+            context.user_data["adm_state"] = "ch_add_limit"
             await msg.reply_text(
-                f"✅ <b>Yopiq kanal qo'shildi!</b>\n"
-                f"📢 {title}\n"
-                f"🔗 {invite_link}",
+                "Kanal topildi: <b>" + title + "</b>\n\n"
+                "Nechta obunachidan keyin bu kanal majburiy obunadan olib tashlansin?\n\n"
+                "Cheksiz qoldirish: 0 yuboring\n"
+                "Masalan: 50, 100, 500",
                 parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔙 Kanallar", callback_data="ch_list")
-                ]])
+                reply_markup=back_admin()
             )
         except Exception as e:
             await msg.reply_text(
-                f"❌ Xatolik: {e}\n\n"
-                f"❗ Bot kanalga admin qilinganmi?\n"
-                f"❗ Kanal ID to'g'rimi: <code>{channel_id}</code>",
-                parse_mode="HTML"
+                "Xatolik: " + str(e) + "\n\n"
+                "Bot kanalga admin qilinganmi?\n"
+                "Kanal ID togrimI: " + channel_id
             )
+        return True
+
+    # ─── KANAL LIMIT ─────────────────────────────────────────────────────────
+    elif state == "ch_add_limit":
+        try:
+            limit = int(text.strip())
+        except ValueError:
+            await msg.reply_text("Faqat raqam yuboring! Masalan: 50")
+            return True
+
+        ch = context.user_data.pop("ch_pending", None)
+        context.user_data.pop("adm_state", None)
+        if not ch:
+            await msg.reply_text("Xatolik! Qaytadan urining.")
+            return True
+
+        db.add_channel(
+            ch["channel_id"], ch["username"],
+            ch["title"], ch["invite_link"], limit
+        )
+        lim_text = str(limit) + " ta obunachidan keyin toxtatiladi" if limit > 0 else "Cheksiz"
+        await msg.reply_text(
+            "Kanal qoshildi!\n\n"
+            "Nom: <b>" + ch["title"] + "</b>\n"
+            "Limit: <b>" + lim_text + "</b>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("Kanallar", callback_data="ch_list")
+            ]])
+        )
         return True
 
     # ─── USER QIDIRISH ────────────────────────────────────────────────────────

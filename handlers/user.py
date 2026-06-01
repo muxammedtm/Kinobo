@@ -154,6 +154,35 @@ async def cb_check_sub(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # Foydalanuvchi yangi obunachi — barcha aktiv kanallarga +1
+    # va limitga yetgan kanallarni o'chirib adminga xabar berish
+    all_channels = db.get_all_channels()
+    for ch in all_channels:
+        if not ch["is_active"]:
+            continue
+        # Bu user bu kanalga yangi obunami? (avval kelmaganmi)
+        already_key = "sub_counted_" + str(user_id) + "_" + str(ch["id"])
+        if context.application.bot_data.get(already_key):
+            continue
+        context.application.bot_data[already_key] = True
+
+        stopped = db.inc_channel_joined(ch["channel_id"])
+        if stopped:
+            # Adminga xabar
+            try:
+                title = ch["title"]
+                lim   = ch["limit_count"]
+                await context.bot.send_message(
+                    cfg.OWNER_ID,
+                    "🔴 <b>Majburiy obuna toxtatildi!</b>\n\n"
+                    "Kanal: <b>" + title + "</b>\n"
+                    "Limit: <b>" + str(lim) + " ta</b> obunachi\n\n"
+                    "Admin panel → Kanallar → kanalga bosing → qayta yoqish mumkin.",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
+
     await query.message.edit_text(t("sub_ok", lang), parse_mode="HTML")
 
     pending = context.user_data.pop("pending_code", None)
