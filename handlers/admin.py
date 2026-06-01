@@ -376,9 +376,10 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save = db.get_setting("save_block")
         bot_u = db.get_setting("bot_username", "")
         ch_u  = db.get_setting("channel_username", "")
+        post_ch = db.get_setting("post_channel", "")
         await query.message.edit_text(
             "⚙️ <b>Sozlamalar</b>", parse_mode="HTML",
-            reply_markup=admin_settings_keyboard(fwd, save, bot_u, ch_u)
+            reply_markup=admin_settings_keyboard(fwd, save, bot_u, ch_u, post_ch)
         )
 
     elif data == "set_toggle_forward":
@@ -388,7 +389,8 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save = db.get_setting("save_block")
         bot_u = db.get_setting("bot_username", "")
         ch_u  = db.get_setting("channel_username", "")
-        await query.message.edit_reply_markup(admin_settings_keyboard(fwd, save, bot_u, ch_u))
+        post_ch = db.get_setting("post_channel", "")
+        await query.message.edit_reply_markup(admin_settings_keyboard(fwd, save, bot_u, ch_u, post_ch))
 
     elif data == "set_toggle_save":
         cur = db.get_setting("save_block")
@@ -397,7 +399,8 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save = db.get_setting("save_block")
         bot_u = db.get_setting("bot_username", "")
         ch_u  = db.get_setting("channel_username", "")
-        await query.message.edit_reply_markup(admin_settings_keyboard(fwd, save, bot_u, ch_u))
+        post_ch = db.get_setting("post_channel", "")
+        await query.message.edit_reply_markup(admin_settings_keyboard(fwd, save, bot_u, ch_u, post_ch))
 
     elif data == "set_bot_username":
         context.user_data["adm_state"] = "set_bot_username"
@@ -418,6 +421,20 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📢 <b>Kanal username</b>{cur_text}\n\n"
             f"Kanal username ini yuboring (@ belgisisiz):\n"
             f"<i>Masalan: KinoUzChannel</i>",
+            parse_mode="HTML", reply_markup=back_admin()
+        )
+
+    elif data == "set_post_channel":
+        context.user_data["adm_state"] = "set_post_channel"
+        cur = db.get_setting("post_channel", "")
+        cur_text = f"\n\nHozirgi: <code>{cur}</code>" if cur else ""
+        await query.message.edit_text(
+            f"📺 <b>Post kanali ID</b>{cur_text}\n\n"
+            f"Kanal ID sini yuboring:\n"
+            f"<i>Masalan: -1001234567890</i>\n\n"
+            f"<b>ID ni topish:</b>\n"
+            f"1. @getidsbot ga kanaldan forward qiling\n"
+            f"2. Bot javob beradi: Chat ID: -1001234567890",
             parse_mode="HTML", reply_markup=back_admin()
         )
 
@@ -805,10 +822,28 @@ async def admin_state_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         save = db.get_setting("save_block")
         bot_u = db.get_setting("bot_username", "")
         ch_u  = db.get_setting("channel_username", "")
+        post_ch = db.get_setting("post_channel", "")
         await msg.reply_text(
             f"✅ Kanal username saqlandi: <code>@{val}</code>",
             parse_mode="HTML",
-            reply_markup=admin_settings_keyboard(fwd, save, bot_u, ch_u)
+            reply_markup=admin_settings_keyboard(fwd, save, bot_u, ch_u, post_ch)
+        )
+        return True
+
+    # ─── POST KANALI ──────────────────────────────────────────────────────────
+    elif state == "set_post_channel":
+        context.user_data.pop("adm_state", None)
+        val = text.strip()
+        db.set_setting("post_channel", val)
+        fwd  = db.get_setting("forward_block")
+        save = db.get_setting("save_block")
+        bot_u = db.get_setting("bot_username", "")
+        ch_u  = db.get_setting("channel_username", "")
+        post_ch = db.get_setting("post_channel", "")
+        await msg.reply_text(
+            f"✅ Post kanali ID saqlandi: <code>{val}</code>",
+            parse_mode="HTML",
+            reply_markup=admin_settings_keyboard(fwd, save, bot_u, ch_u, post_ch)
         )
         return True
 
@@ -818,8 +853,10 @@ async def admin_state_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 # ─── KANALGA POST ────────────────────────────────────────────────────────────
 
 async def _post_to_channel(bot, movie: dict):
-    if not cfg.POST_CHANNEL:
-        return
+    # Database dan post kanal ID sini olish
+    post_channel = db.get_setting("post_channel", "").strip()
+    if not post_channel:
+        return  # Post kanali sozlanmagan
 
     # DB dan bot va kanal username larini olish
     bot_username     = db.get_setting("bot_username", "").strip()
@@ -856,9 +893,8 @@ async def _post_to_channel(bot, movie: dict):
     kb = InlineKeyboardMarkup(kb_rows) if kb_rows else None
 
     try:
-        # Video yuborish
         await bot.send_video(
-            chat_id=cfg.POST_CHANNEL,
+            chat_id=post_channel,
             video=movie["file_id"],
             caption=text,
             parse_mode="HTML",
@@ -868,7 +904,7 @@ async def _post_to_channel(bot, movie: dict):
         # Video ishlamasa, dokument sifatida yuborish
         try:
             await bot.send_document(
-                chat_id=cfg.POST_CHANNEL,
+                chat_id=post_channel,
                 document=movie["file_id"],
                 caption=text,
                 parse_mode="HTML",
@@ -878,7 +914,7 @@ async def _post_to_channel(bot, movie: dict):
             # Agar dokument ham ishlamasa, faqat xabar yuborish
             try:
                 await bot.send_message(
-                    chat_id=cfg.POST_CHANNEL,
+                    chat_id=post_channel,
                     text=text,
                     parse_mode="HTML",
                     reply_markup=kb
