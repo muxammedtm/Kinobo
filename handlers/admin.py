@@ -905,8 +905,6 @@ async def _post_to_channel(bot, movie: dict):
     if bot_username:
         deep_link = f"https://t.me/{bot_username}?start={movie['code']}"
         kb_rows.append([InlineKeyboardButton("🎥 Kinoni olish", url=deep_link)])
-    if bot_username and movie.get("code"):
-        kb_rows.append([InlineKeyboardButton("🎬 Kinoni olish", url=f"https://t.me/{bot_username}?start={movie['code']}")])
     if channel_username:
         kb_rows.append([InlineKeyboardButton("📢 Kanalga o'tish", url=f"https://t.me/{channel_username}")])
     kb = InlineKeyboardMarkup(kb_rows) if kb_rows else None
