@@ -856,19 +856,35 @@ async def _post_to_channel(bot, movie: dict):
     kb = InlineKeyboardMarkup(kb_rows) if kb_rows else None
 
     try:
+        # Video yuborish
         await bot.send_video(
-            cfg.POST_CHANNEL,
+            chat_id=cfg.POST_CHANNEL,
             video=movie["file_id"],
             caption=text,
             parse_mode="HTML",
             reply_markup=kb
         )
-    except Exception:
-        # Video ishlamasa, oddiy xabar yuborish
+    except Exception as e:
+        # Video ishlamasa, dokument sifatida yuborish
         try:
-            await bot.send_message(cfg.POST_CHANNEL, text, parse_mode="HTML", reply_markup=kb)
+            await bot.send_document(
+                chat_id=cfg.POST_CHANNEL,
+                document=movie["file_id"],
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=kb
+            )
         except Exception:
-            pass
+            # Agar dokument ham ishlamasa, faqat xabar yuborish
+            try:
+                await bot.send_message(
+                    chat_id=cfg.POST_CHANNEL,
+                    text=text,
+                    parse_mode="HTML",
+                    reply_markup=kb
+                )
+            except Exception:
+                pass
 
 
 # ─── EXPORT USERS ────────────────────────────────────────────────────────────
