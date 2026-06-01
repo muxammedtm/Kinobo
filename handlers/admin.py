@@ -187,13 +187,15 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         import random as _rand
         ids = db.get_all_movies_ids()
         if not ids:
-            await query.message.edit_text("📭 Hozircha kinolar yo\'q.", reply_markup=back_admin())
+            await query.message.edit_text("Hozircha kinolar yoq.", reply_markup=back_admin())
         else:
             movie = db.get_movie_by_id(_rand.choice(ids))
+            title = movie["title"]
+            code  = movie["code"]
             await query.message.edit_text(
-                "🎲 <b>Tasodifiy kino tanlandi!</b>\n\n"
-                f"🎬 <b>{movie[\'title\']}</b>\n"
-                f"🆔 Kod: <code>{movie[\'code\']}</code>\n\n"
+                "Tasodifiy kino tanlandi!\n\n"
+                "<b>" + title + "</b>\n"
+                "Kod: <code>" + code + "</code>\n\n"
                 "Foydalanuvchilarga yuborish uchun broadcast ishlating.",
                 parse_mode="HTML", reply_markup=back_admin()
             )
