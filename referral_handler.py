@@ -207,7 +207,7 @@ async def _show_ref_stats(query, code, msg=""):
         f"👥 Jami keldi:   <b>{s['total']}</b>\n"
         f"📅 Bugun:        <b>{s['today']}</b>\n"
         f"📆 7 kun:        <b>{s['week']}</b>\n"
-        f"🔢 Limit:        <b>{'Yo\'q' if ref['limit_count']==0 else ref['limit_count']}</b>\n\n"
+        f"🔢 Limit:        <b>{('Yoq' if ref['limit_count']==0 else ref['limit_count'])}</b>\n\n"
         f"📈 <b>Kunlik grafik:</b>{daily_text}\n\n"
         f"🔗 <b>Link:</b>\n<code>{link}</code>"
     )
