@@ -374,9 +374,11 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "adm_settings":
         fwd  = db.get_setting("forward_block")
         save = db.get_setting("save_block")
+        bot_u = db.get_setting("bot_username", "")
+        ch_u  = db.get_setting("channel_username", "")
         await query.message.edit_text(
             "⚙️ <b>Sozlamalar</b>", parse_mode="HTML",
-            reply_markup=admin_settings_keyboard(fwd, save)
+            reply_markup=admin_settings_keyboard(fwd, save, bot_u, ch_u)
         )
 
     elif data == "set_toggle_forward":
@@ -384,14 +386,40 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.set_setting("forward_block", "0" if cur == "1" else "1")
         fwd  = db.get_setting("forward_block")
         save = db.get_setting("save_block")
-        await query.message.edit_reply_markup(admin_settings_keyboard(fwd, save))
+        bot_u = db.get_setting("bot_username", "")
+        ch_u  = db.get_setting("channel_username", "")
+        await query.message.edit_reply_markup(admin_settings_keyboard(fwd, save, bot_u, ch_u))
 
     elif data == "set_toggle_save":
         cur = db.get_setting("save_block")
         db.set_setting("save_block", "0" if cur == "1" else "1")
         fwd  = db.get_setting("forward_block")
         save = db.get_setting("save_block")
-        await query.message.edit_reply_markup(admin_settings_keyboard(fwd, save))
+        bot_u = db.get_setting("bot_username", "")
+        ch_u  = db.get_setting("channel_username", "")
+        await query.message.edit_reply_markup(admin_settings_keyboard(fwd, save, bot_u, ch_u))
+
+    elif data == "set_bot_username":
+        context.user_data["adm_state"] = "set_bot_username"
+        cur = db.get_setting("bot_username", "")
+        cur_text = f"\n\nHozirgi: <code>@{cur}</code>" if cur else ""
+        await query.message.edit_text(
+            f"🤖 <b>Bot username</b>{cur_text}\n\n"
+            f"Bot username ini yuboring (@ belgisisiz):\n"
+            f"<i>Masalan: KinoUzBot</i>",
+            parse_mode="HTML", reply_markup=back_admin()
+        )
+
+    elif data == "set_channel_username":
+        context.user_data["adm_state"] = "set_channel_username"
+        cur = db.get_setting("channel_username", "")
+        cur_text = f"\n\nHozirgi: <code>@{cur}</code>" if cur else ""
+        await query.message.edit_text(
+            f"📢 <b>Kanal username</b>{cur_text}\n\n"
+            f"Kanal username ini yuboring (@ belgisisiz):\n"
+            f"<i>Masalan: KinoUzChannel</i>",
+            parse_mode="HTML", reply_markup=back_admin()
+        )
 
     # ── ADMINLAR ─────────────────────────────────────────────────────────────
     elif data == "adm_admins":
@@ -752,6 +780,38 @@ async def admin_state_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             await msg.reply_text("❌ Noto'g'ri ID! Faqat raqam yuboring.")
         return True
 
+    # ─── BOT USERNAME ─────────────────────────────────────────────────────────
+    elif state == "set_bot_username":
+        context.user_data.pop("adm_state", None)
+        val = text.lstrip("@").strip()
+        db.set_setting("bot_username", val)
+        fwd  = db.get_setting("forward_block")
+        save = db.get_setting("save_block")
+        bot_u = db.get_setting("bot_username", "")
+        ch_u  = db.get_setting("channel_username", "")
+        await msg.reply_text(
+            f"✅ Bot username saqlandi: <code>@{val}</code>",
+            parse_mode="HTML",
+            reply_markup=admin_settings_keyboard(fwd, save, bot_u, ch_u)
+        )
+        return True
+
+    # ─── KANAL USERNAME ───────────────────────────────────────────────────────
+    elif state == "set_channel_username":
+        context.user_data.pop("adm_state", None)
+        val = text.lstrip("@").strip()
+        db.set_setting("channel_username", val)
+        fwd  = db.get_setting("forward_block")
+        save = db.get_setting("save_block")
+        bot_u = db.get_setting("bot_username", "")
+        ch_u  = db.get_setting("channel_username", "")
+        await msg.reply_text(
+            f"✅ Kanal username saqlandi: <code>@{val}</code>",
+            parse_mode="HTML",
+            reply_markup=admin_settings_keyboard(fwd, save, bot_u, ch_u)
+        )
+        return True
+
     return False
 
 
@@ -760,24 +820,55 @@ async def admin_state_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def _post_to_channel(bot, movie: dict):
     if not cfg.POST_CHANNEL:
         return
-    text = (
-        f"🎬 <b>{movie['title']}</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-    )
+
+    # DB dan bot va kanal username larini olish
+    bot_username     = db.get_setting("bot_username", "").strip()
+    channel_username = db.get_setting("channel_username", "").strip()
+
+    # Asosiy kino ma'lumotlari
+    text = f"🎬 <b>{movie['title']}</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+    if movie.get("description"):
+        text += f"📝 {movie['description']}\n"
     if movie.get("year"):
         text += f"📅 Yil: {movie['year']}\n"
     if movie.get("genre"):
         text += f"🎭 Janr: {movie['genre']}\n"
-    text += f"\n🆔 Kod: <code>{movie['code']}</code>\n🤖 Bot: @{cfg.BOT_USERNAME}"
+    if movie.get("category"):
+        text += f"📂 Kategoriya: {movie['category']}\n"
+    text += f"\n🆔 Kod: <code>{movie['code']}</code>"
 
-    deep_link = f"https://t.me/{cfg.BOT_USERNAME}?start={movie['code']}"
-    kb = InlineKeyboardMarkup([[
-        InlineKeyboardButton("🎥 Kinoni olish", url=deep_link)
-    ]])
+    # Bot va kanal manzillarini qo'shish
+    footer_parts = []
+    if bot_username:
+        footer_parts.append(f"🤖 Bot: @{bot_username}")
+    if channel_username:
+        footer_parts.append(f"📢 Kanal: @{channel_username}")
+    if footer_parts:
+        text += "\n━━━━━━━━━━━━━━━━━━━━\n" + "  |  ".join(footer_parts)
+
+    # Inline tugma — kinoni botdan olish
+    kb_rows = []
+    if bot_username:
+        deep_link = f"https://t.me/{bot_username}?start={movie['code']}"
+        kb_rows.append([InlineKeyboardButton("🎥 Kinoni olish", url=deep_link)])
+    if channel_username:
+        kb_rows.append([InlineKeyboardButton("📢 Kanalga o'tish", url=f"https://t.me/{channel_username}")])
+    kb = InlineKeyboardMarkup(kb_rows) if kb_rows else None
+
     try:
-        await bot.send_message(cfg.POST_CHANNEL, text, parse_mode="HTML", reply_markup=kb)
-    except Exception as e:
-        pass  # Kanal sozlanmagan bo'lishi mumkin
+        await bot.send_video(
+            cfg.POST_CHANNEL,
+            video=movie["file_id"],
+            caption=text,
+            parse_mode="HTML",
+            reply_markup=kb
+        )
+    except Exception:
+        # Video ishlamasa, oddiy xabar yuborish
+        try:
+            await bot.send_message(cfg.POST_CHANNEL, text, parse_mode="HTML", reply_markup=kb)
+        except Exception:
+            pass
 
 
 # ─── EXPORT USERS ────────────────────────────────────────────────────────────
