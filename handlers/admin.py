@@ -595,7 +595,6 @@ async def admin_state_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 f"❗ Kanal ID to'g'rimi: <code>{channel_id}</code>",
                 parse_mode="HTML"
             )
-            )
         return True
 
     # ─── USER QIDIRISH ────────────────────────────────────────────────────────
