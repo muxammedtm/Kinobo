@@ -34,10 +34,15 @@ def main_menu(lang="uz"):
 def subscription_keyboard(channels: list, lang="uz"):
     rows = []
     for ch in channels:
-        rows.append([InlineKeyboardButton(
-            f"📢 {ch['title']}",
-            url=f"https://t.me/{ch['username'].lstrip('@')}"
-        )])
+        # Yopiq kanal — invite_link bor
+        if ch.get("invite_link") and ch["invite_link"].startswith("https://"):
+            url = ch["invite_link"]
+        # Ochiq kanal — @username dan link
+        elif ch.get("username", "").startswith("@"):
+            url = f"https://t.me/{ch['username'].lstrip('@')}"
+        else:
+            url = ch.get("username", "")
+        rows.append([InlineKeyboardButton(f"📢 {ch['title']}", url=url)])
     label = "✅ Tekshirish" if lang == "uz" else "✅ Проверить"
     rows.append([InlineKeyboardButton(label, callback_data="check_sub")])
     return InlineKeyboardMarkup(rows)

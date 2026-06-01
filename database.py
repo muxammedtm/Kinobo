@@ -50,11 +50,12 @@ class Database:
                 );
 
                 CREATE TABLE IF NOT EXISTS channels (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    channel_id  TEXT UNIQUE NOT NULL,
-                    username    TEXT NOT NULL,
-                    title       TEXT DEFAULT '',
-                    is_active   INTEGER DEFAULT 1
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    channel_id   TEXT UNIQUE NOT NULL,
+                    username     TEXT NOT NULL,
+                    title        TEXT DEFAULT '',
+                    invite_link  TEXT DEFAULT '',
+                    is_active    INTEGER DEFAULT 1
                 );
 
                 CREATE TABLE IF NOT EXISTS settings (
@@ -73,6 +74,8 @@ class Database:
                     code       TEXT UNIQUE NOT NULL,
                     label      TEXT NOT NULL,
                     created_by INTEGER NOT NULL,
+                    limit_count INTEGER DEFAULT 0,
+                    is_active  INTEGER DEFAULT 1,
                     created_at TEXT DEFAULT (datetime('now'))
                 );
 
@@ -278,11 +281,11 @@ class Database:
 
     # ── CHANNELS ─────────────────────────────────────────────────────────────
 
-    def add_channel(self, channel_id, username, title=""):
+    def add_channel(self, channel_id, username, title="", invite_link=""):
         with self._conn() as c:
             c.execute(
-                "INSERT OR REPLACE INTO channels(channel_id,username,title) VALUES(?,?,?)",
-                (channel_id, username, title)
+                "INSERT OR REPLACE INTO channels(channel_id,username,title,invite_link) VALUES(?,?,?,?)",
+                (channel_id, username, title, invite_link)
             )
             c.commit()
 
@@ -340,17 +343,32 @@ class Database:
 
     # ── REFERRAL ─────────────────────────────────────────────────────────────
 
-    def create_ref(self, code, label, created_by):
+    def create_ref(self, code, label, created_by, limit_count=0):
         try:
             with self._conn() as c:
                 c.execute(
-                    "INSERT INTO ref_sources(code,label,created_by) VALUES(?,?,?)",
-                    (code, label, created_by)
+                    "INSERT INTO ref_sources(code,label,created_by,limit_count) VALUES(?,?,?,?)",
+                    (code, label, created_by, limit_count)
                 )
                 c.commit()
             return True
         except Exception:
             return False
+
+    def set_ref_limit(self, code, limit_count):
+        with self._conn() as c:
+            c.execute("UPDATE ref_sources SET limit_count=? WHERE code=?", (limit_count, code))
+            c.commit()
+
+    def stop_ref(self, code):
+        with self._conn() as c:
+            c.execute("UPDATE ref_sources SET is_active=0 WHERE code=?", (code,))
+            c.commit()
+
+    def resume_ref(self, code):
+        with self._conn() as c:
+            c.execute("UPDATE ref_sources SET is_active=1 WHERE code=?", (code,))
+            c.commit()
 
     def get_ref(self, code):
         with self._conn() as c:
@@ -368,17 +386,41 @@ class Database:
             c.execute("DELETE FROM ref_joins WHERE ref_code=?", (code,))
             c.commit()
 
-    def add_ref_join(self, user_id, ref_code):
-        try:
-            with self._conn() as c:
-                c.execute(
-                    "INSERT OR IGNORE INTO ref_joins(user_id,ref_code) VALUES(?,?)",
-                    (user_id, ref_code)
-                )
-                c.commit()
-            return True
-        except Exception:
-            return False
+    def add_ref_join(self, user_id, ref_code) -> str:
+        """
+        Qaytaradi:
+          'ok'      — muvaffaqiyatli qo'shildi
+          'already' — avval qo'shilgan
+          'stopped' — limit to'lgan, to'xtatildi
+          'inactive'— kampaniya faol emas
+        """
+        ref = self.get_ref(ref_code)
+        if not ref:
+            return 'inactive'
+        if not ref['is_active']:
+            return 'inactive'
+
+        # Avval kelganmi?
+        with self._conn() as c:
+            exists = c.execute(
+                "SELECT 1 FROM ref_joins WHERE user_id=? AND ref_code=?", (user_id, ref_code)
+            ).fetchone()
+            if exists:
+                return 'already'
+
+            c.execute(
+                "INSERT INTO ref_joins(user_id,ref_code) VALUES(?,?)", (user_id, ref_code)
+            )
+            c.commit()
+
+        # Limit tekshirish
+        stats = self.get_ref_stats(ref_code)
+        limit = ref['limit_count']
+        if limit > 0 and stats['total'] >= limit:
+            self.stop_ref(ref_code)
+            return 'stopped'
+
+        return 'ok'
 
     def get_ref_stats(self, code):
         with self._conn() as c:
@@ -398,7 +440,9 @@ class Database:
     def get_all_ref_stats(self):
         with self._conn() as c:
             rows = c.execute(
-                "SELECT r.code, r.label, r.created_at, COUNT(j.id) as total FROM ref_sources r LEFT JOIN ref_joins j ON j.ref_code=r.code GROUP BY r.code ORDER BY total DESC"
+                "SELECT r.code, r.label, r.created_at, r.limit_count, r.is_active, COUNT(j.id) as total "
+                "FROM ref_sources r LEFT JOIN ref_joins j ON j.ref_code=r.code "
+                "GROUP BY r.code ORDER BY total DESC"
             ).fetchall()
             return [dict(r) for r in rows]
 
