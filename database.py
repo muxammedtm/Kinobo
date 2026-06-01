@@ -237,6 +237,11 @@ class Database:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def get_all_movies_ids(self):
+        with self._conn() as c:
+            rows = c.execute("SELECT id FROM movies").fetchall()
+            return [r[0] for r in rows]
+
     def get_movies_count(self):
         with self._conn() as c:
             return c.execute("SELECT COUNT(*) FROM movies").fetchone()[0]

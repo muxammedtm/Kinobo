@@ -17,15 +17,15 @@ def main_menu(lang="uz"):
         buttons = [
             [KeyboardButton("🎬 Поиск фильма"),   KeyboardButton("⭐ Избранное")],
             [KeyboardButton("🔥 ТОП фильмов"),    KeyboardButton("🆕 Новые")],
-            [KeyboardButton("📜 История"),         KeyboardButton("🌐 Язык")],
-            [KeyboardButton("ℹ️ Помощь")],
+            [KeyboardButton("🎲 Случайный"),       KeyboardButton("📜 История")],
+            [KeyboardButton("🌐 Язык"),            KeyboardButton("ℹ️ Помощь")],
         ]
     else:
         buttons = [
             [KeyboardButton("🎬 Kino qidirish"),  KeyboardButton("⭐ Sevimlilar")],
             [KeyboardButton("🔥 TOP kinolar"),     KeyboardButton("🆕 Yangi kinolar")],
-            [KeyboardButton("📜 Tarix"),           KeyboardButton("🌐 Til")],
-            [KeyboardButton("ℹ️ Yordam")],
+            [KeyboardButton("🎲 Tasodifiy kino"),  KeyboardButton("📜 Tarix")],
+            [KeyboardButton("🌐 Til"),             KeyboardButton("ℹ️ Yordam")],
         ]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
@@ -34,10 +34,8 @@ def main_menu(lang="uz"):
 def subscription_keyboard(channels: list, lang="uz"):
     rows = []
     for ch in channels:
-        # Yopiq kanal — invite_link bor
         if ch.get("invite_link") and ch["invite_link"].startswith("https://"):
             url = ch["invite_link"]
-        # Ochiq kanal — @username dan link
         elif ch.get("username", "").startswith("@"):
             url = f"https://t.me/{ch['username'].lstrip('@')}"
         else:
@@ -49,13 +47,16 @@ def subscription_keyboard(channels: list, lang="uz"):
 
 # ─── KINO TUGMALARI ──────────────────────────────────────────────────────────
 
-def movie_keyboard(movie_id, is_fav=False, lang="uz"):
+def movie_keyboard(movie_id, is_fav=False, lang="uz", bot_username="", channel_username=""):
     fav_label = ("🗑 Sevimlilardan o'chir" if is_fav else "⭐ Sevimlilarga qo'sh") if lang == "uz" \
         else ("🗑 Удалить из избранного" if is_fav else "⭐ В избранное")
     fav_cb = f"fav_remove_{movie_id}" if is_fav else f"fav_add_{movie_id}"
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton(fav_label, callback_data=fav_cb)
-    ]])
+    rows = [[InlineKeyboardButton(fav_label, callback_data=fav_cb)]]
+    if bot_username:
+        rows.append([InlineKeyboardButton("🤖 Botga o'tish", url=f"https://t.me/{bot_username}")])
+    if channel_username:
+        rows.append([InlineKeyboardButton("📢 Kanalga o'tish", url=f"https://t.me/{channel_username}")])
+    return InlineKeyboardMarkup(rows)
 
 # ─── ADMIN PANEL ─────────────────────────────────────────────────────────────
 
@@ -87,6 +88,9 @@ def admin_movies_keyboard():
         [
             InlineKeyboardButton("🔍 Qidirish",   callback_data="mov_search"),
             InlineKeyboardButton("🔥 TOP",         callback_data="mov_top"),
+        ],
+        [
+            InlineKeyboardButton("🎲 Random yuborish", callback_data="mov_random_send"),
         ],
         [InlineKeyboardButton("🔙 Orqaga",        callback_data="adm_back")],
     ])
@@ -168,3 +172,17 @@ def movie_edit_fields(movie_id):
         [InlineKeyboardButton("🔢 Kod",       callback_data=f"mfield_code_{movie_id}")],
         [InlineKeyboardButton("🔙 Orqaga",    callback_data=f"minfo_{movie_id}")],
     ])
+
+def channel_post_keyboard(bot_username="", channel_username="", movie_code=""):
+    rows = []
+    if bot_username and movie_code:
+        rows.append([InlineKeyboardButton(
+            "🎬 Kinoni olish",
+            url=f"https://t.me/{bot_username}?start={movie_code}"
+        )])
+    if channel_username:
+        rows.append([InlineKeyboardButton(
+            "📢 Kanalga o'tish",
+            url=f"https://t.me/{channel_username}"
+        )])
+    return InlineKeyboardMarkup(rows) if rows else None
